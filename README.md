@@ -5,6 +5,7 @@ chm499 project at uoft
 
 2. assemble a database based on ApisTox 
    - PPDB + BPDB + EcoTOX
+         - PPDB has 2149 compounds while BPDB has 834 
    - choose categories 
    - toxicity framework?
    -  
