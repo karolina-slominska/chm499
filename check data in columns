@@ -1,0 +1,104 @@
+import tkinter as tk
+from tkinter import filedialog
+from openpyxl import load_workbook
+
+def pick_excel_file():
+    """Open a file picker and return the selected Excel file path."""
+    root = tk.Tk()
+    root.withdraw()
+    return filedialog.askopenfilename(
+        title="Select Excel file",
+        filetypes=[("Excel files", "*.xlsx *.xls")]
+    )
+
+def is_filled(val, blank_tokens=None):
+    """
+    Return True if a cell should count as 'filled'.
+    - None -> empty
+    - strings -> must have non-whitespace
+    - optional: treat tokens like 'NA', 'N/A', '-' as empty
+    """
+    if blank_tokens is None:
+        blank_tokens = ()
+    if val is None:
+        return False
+    if isinstance(val, str):
+        s = val.strip()
+        if s == "":
+            return False
+        return s.upper() not in {t.upper() for t in blank_tokens}
+    # numbers, dates (like publication year), booleans count as filled
+    return True
+
+def count_filled_by_column(file_path, header_row=1, data_start_row=None, blank_tokens=None):
+    """
+    Count non-empty cells per column, keyed by header text.
+    - header_row: row index (1-based) where headers live
+    - data_start_row: first data row (defaults to header_row + 1)
+    - blank_tokens: values like ('NA','N/A','-') to treat as empty
+    Returns: list of (header, filled, total_rows_considered)
+    """
+    wb = load_workbook(file_path, data_only=True)
+    ws = wb.active
+
+    if data_start_row is None:
+        data_start_row = header_row + 1
+
+    max_row = ws.max_row
+    max_col = ws.max_column
+    results = []
+
+    for col_idx in range(1, max_col + 1):
+        header = ws.cell(row=header_row, column=col_idx).value
+        if isinstance(header, str):
+            header = header.strip()
+        if not header:
+            header = f"Col{col_idx}"
+
+        filled = 0
+        for row_idx in range(data_start_row, max_row + 1):
+            val = ws.cell(row=row_idx, column=col_idx).value
+            if is_filled(val, blank_tokens=blank_tokens):
+                filled += 1
+
+        total = max_row - data_start_row + 1
+        results.append((header, filled, total))
+
+    return results
+
+def headers_with_few_data(file_path, header_row=1, min_count=50):
+    wb = load_workbook(file_path, data_only=True)
+    ws = wb.active
+    max_row, max_col = ws.max_row, ws.max_column
+
+    results = []
+    for col in range(1, max_col + 1):
+        header = ws.cell(row=header_row, column=col).value or f"Col{col}"
+        filled = sum(
+            1 for row in range(header_row + 1, max_row + 1)
+            if ws.cell(row=row, column=col).value not in (None, "", " ", "NA", "N/A", "-")
+        )
+        if filled < min_count:
+            results.append((header, filled))
+    return results
+
+
+if __name__ == "__main__":
+    path = pick_excel_file()
+
+    # Print counts for every column
+    counts = count_filled_by_column(
+        path,
+        header_row=1,
+        blank_tokens=("NA", "N/A", "-")  # treat these as empty
+    )
+    print("\n--- Column counts ---")
+    for header, filled, total in counts:
+        print(f"{header}: {filled}/{total} filled")
+
+    # Print only the weak columns (< 50 entries)
+    print("\n--- Headers with <50 filled cells ---")
+    few_data = headers_with_few_data(path, header_row=1, min_count=50)
+    for header, filled in few_data:
+        print(f"{header}: {filled}")
+
