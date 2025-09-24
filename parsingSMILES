@@ -1,0 +1,193 @@
+import os
+import re
+import pandas as pd
+from tkinter import Tk, filedialog
+
+# RDKit imports and log suppression
+from rdkit import RDLogger
+RDLogger.DisableLog('rdApp.*')
+from rdkit.Chem import MolFromSmiles, MolToSmiles
+
+# Optional PubChem fallback
+try:
+    import pubchempy as pcp
+except Exception:
+    pcp = None
+    print("Warning: pubchempy not installed; PubChem fallback will be skipped. Run: pip install pubchempy")
+
+
+PROGRESS_EVERY = 50 
+
+
+def find_column(df: pd.DataFrame, candidates):
+    """Return the first matching column from candidates (case-insensitive)."""
+    for c in candidates:
+        if c in df.columns:
+            return c
+    lower_map = {c.lower(): c for c in df.columns}
+    for c in candidates:
+        if c.lower() in lower_map:
+            return lower_map[c.lower()]
+    return None
+
+def rdkit_canonical(smi):
+    """Return RDKit-canonical SMILES (isomeric) or None if invalid."""
+    if smi is None or (isinstance(smi, float) and pd.isna(smi)):
+        return None
+    s = str(smi).strip()
+    if not s:
+        return None
+    mol = MolFromSmiles(s)
+    if not mol:
+        return None
+    return MolToSmiles(mol, isomericSmiles=True)
+
+_CAS_RE = re.compile(r"^\d{2,7}-\d{2}-\d$")
+
+def sanitize_cas(val):
+    """Return CAS RN if it matches NNNNN-NN-N, else None."""
+    if pd.isna(val):
+        return None
+    s = str(val).strip().replace(" ", "")
+    return s if _CAS_RE.match(s) else None
+
+# Simple caches to avoid repeated PubChem queries
+_pubchem_cas_cache = {}
+_pubchem_name_cache = {}
+
+def fetch_pubchem_by_cas(cas):
+    """Return SMILES from PubChem via CAS RN, or None."""
+    if not pcp or not cas:
+        return None
+    if cas in _pubchem_cas_cache:
+        return _pubchem_cas_cache[cas]
+    try:
+        comps = pcp.get_compounds(cas, 'name')
+        if comps:
+            smi = comps[0].canonical_smiles
+            _pubchem_cas_cache[cas] = smi
+            return smi
+    except Exception:
+        pass
+    _pubchem_cas_cache[cas] = None
+    return None
+
+def fetch_pubchem_by_name(name):
+    """Return SMILES from PubChem via compound name, or None."""
+    if not pcp or not name:
+        return None
+    key = str(name).strip().lower()
+    if key in _pubchem_name_cache:
+        return _pubchem_name_cache[key]
+    try:
+        comps = pcp.get_compounds(name, 'name')
+        if comps:
+            smi = comps[0].canonical_smiles
+            _pubchem_name_cache[key] = smi
+            return smi
+    except Exception:
+        pass
+    _pubchem_name_cache[key] = None
+    return None
+
+def build_checked_smiles_row(row, col_canon, col_iso, col_cas, col_name):
+    """
+    Priority:
+      1) RDKit-parse Canonical SMILES
+      2) RDKit-parse Isomeric SMILES
+      3) PubChem by CAS → RDKit canonical
+      4) PubChem by Name → RDKit canonical
+      else Unresolved
+    """
+    # 1) Canonical SMILES
+    if col_canon:
+        smi = rdkit_canonical(row[col_canon])
+        if smi:
+            return smi, "Canonical"
+
+    # 2) Isomeric SMILES
+    if col_iso:
+        smi = rdkit_canonical(row[col_iso])
+        if smi:
+            return smi, "Isomeric"
+
+    # 3) PubChem by CAS
+    cas = sanitize_cas(row[col_cas]) if col_cas else None
+    if cas:
+        smi = fetch_pubchem_by_cas(cas)
+        smi = rdkit_canonical(smi) if smi else None
+        if smi:
+            return smi, "PubChemCAS"
+
+    # 4) PubChem by Name
+    name = str(row[col_name]).strip() if (col_name and pd.notna(row[col_name])) else None
+    if name:
+        smi = fetch_pubchem_by_name(name)
+        smi = rdkit_canonical(smi) if smi else None
+        if smi:
+            return smi, "PubChemName"
+
+    return None, "Unresolved"
+
+# ------------------------------
+# File picker
+# ------------------------------
+Tk().withdraw()
+print("Select your merged PPDB+BPDB Excel file")
+file_path = filedialog.askopenfilename(
+    title="Select merged PPDB+BPDB file",
+    filetypes=[("Excel files", "*.xlsx")]
+)
+if not file_path:
+    raise SystemExit("No file selected.")
+
+df = pd.read_excel(file_path)
+print(f"Loaded {len(df)} rows")
+
+# Column detection
+col_name  = find_column(df, ["Name"])
+col_cas   = find_column(df, ["CASRN", "CAS RN", "CAS", "CAS_Number", "CAS Number"])
+col_canon = find_column(df, ["Canonical SMILES"])
+col_iso   = find_column(df, ["Isomeric SMILES"])
+
+if not col_name:
+    raise KeyError("Column 'Name' not found.")
+if not (col_canon or col_iso or col_cas):
+    raise KeyError("Need at least one of: 'Canonical SMILES', 'Isomeric SMILES', or a CAS column.")
+
+
+total = len(df)
+checked = []
+sources = []
+valid_count = 0
+
+for i, (_, row) in enumerate(df.iterrows(), start=1):
+    smi, src = build_checked_smiles_row(row, col_canon, col_iso, col_cas, col_name)
+    checked.append(smi)
+    sources.append(src)
+    if smi:
+        valid_count += 1
+
+    if i % PROGRESS_EVERY == 0 or i == total:
+        print(f"Done {i}/{total} | valid: {valid_count} | unresolved: {i - valid_count}", flush=True)
+
+df["Checked SMILES"] = checked
+df["SMILES_Source"]  = sources
+
+n_valid = df["Checked SMILES"].notna().sum()
+n_unres = (df["SMILES_Source"] == "Unresolved").sum()
+print(f"Valid SMILES: {n_valid} / {len(df)}")
+print(f"Unresolved:   {n_unres}")
+
+
+out_dir = os.path.dirname(file_path) or "."
+unresolved_path = os.path.join(out_dir, "unresolved_smiles.xlsx")
+unresolved = df[df["SMILES_Source"] == "Unresolved"]
+if not unresolved.empty:
+    unresolved.to_excel(unresolved_path, index=False)
+    print(f"Saved unresolved rows -> {unresolved_path}")
+
+
+final_path = os.path.join(out_dir, "ppdbbpdb_smiles.xlsx")
+df.to_excel(final_path, index=False)
+print(f"Saved final database -> {final_path}")
