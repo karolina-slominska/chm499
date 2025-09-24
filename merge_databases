@@ -27,59 +27,6 @@ def load_file(filepath):
         return pd.read_csv(filepath)
     else:
         raise ValueError(f"Unsupported file type: {filepath}")
-import pandas as pd
-from tkinter import Tk, filedialog
-
-
-Tk().withdraw()  
-
-print("📂 Select PPDB file")
-ppdb_file = filedialog.askopenfilename(
-    title="Select PPDB file",
-    filetypes=[("Excel/CSV files", "*.xlsx *.csv")]
-)
-
-print("📂 Select BPDB file")
-bpdb_file = filedialog.askopenfilename(
-    title="Select BPDB file",
-    filetypes=[("Excel/CSV files", "*.xlsx *.csv")]
-)
-
-if not ppdb_file or not bpdb_file:
-    raise ValueError(" You must select both files!")
-
-
-def load_file(filepath):
-    if filepath.endswith(".xlsx"):
-        return pd.read_excel(filepath)
-    elif filepath.endswith(".csv"):
-        return pd.read_csv(filepath)
-    else:
-        raise ValueError(f"Unsupported file type: {filepath}")
-
-ppdb = load_file(ppdb_file)
-bpdb = load_file(bpdb_file)
-
-print(f" Loaded PPDB with {len(ppdb)} rows")
-print(f"Loaded BPDB with {len(bpdb)} rows")
-
-
-ppdb.columns = ppdb.columns.str.strip()
-bpdb.columns = bpdb.columns.str.strip()
-
-missing = bpdb[~bpdb["Name"].isin(ppdb["Name"])]
-print(f"⚠️ Found {len(missing)} compounds in BPDB not in PPDB")
-
-
-merged = pd.concat([ppdb, missing], ignore_index=True)
-
-print(f"Final merged dataset has {len(merged)} rows")
-
-
-output_file = ppdb_file.rsplit(".", 1)[0] + "_merged.xlsx"
-merged.to_excel(output_file, index=False, engine="openpyxl")
-
-print(f"💾 Saved merged file as {output_file}")
 
 
 ppdb = load_file(ppdb_file)
@@ -88,18 +35,11 @@ bpdb = load_file(bpdb_file)
 print(f" Loaded PPDB with {len(ppdb)} rows")
 print(f" Loaded BPDB with {len(bpdb)} rows")
 
-
-ppdb["Source"] = "PPDB"
-bpdb["Source"] = "BPDB"
-
-
 ppdb.columns = ppdb.columns.str.strip()
 bpdb.columns = bpdb.columns.str.strip()
 
-# Keep only BPDB entries not already in PPDB
 missing = bpdb[~bpdb["Name"].isin(ppdb["Name"])]
 print(f"Found {len(missing)} compounds in BPDB not in PPDB")
-
 
 merged = pd.concat([ppdb, missing], ignore_index=True)
 
@@ -109,4 +49,4 @@ print(f" Final merged dataset has {len(merged)} rows")
 output_file = ppdb_file.rsplit(".", 1)[0] + "_merged.xlsx"
 merged.to_excel(output_file, index=False, engine="openpyxl")
 
-print(f"Saved merged file as {output_file}")
+print(f" Saved merged file as {output_file}")
