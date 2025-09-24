@@ -1,0 +1,166 @@
+import os
+import re
+import pandas as pd
+from tkinter import Tk, filedialog
+from rdkit import Chem, RDLogger
+
+RDLogger.DisableLog('rdApp.*')  # silence RDKit chatter
+
+# Optional PubChem fallback
+try:
+    import pubchempy as pcp
+except Exception:
+    pcp = None
+    print("Warning: pubchempy not installed; PubChem fallback disabled. Run: pip install pubchempy")
+
+PROGRESS_EVERY = 50  # progress cadence
+
+# ----------------- helpers -----------------
+def load_any(path):
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".xlsx", ".xls"):
+        return pd.read_excel(path)
+    elif ext == ".csv":
+        return pd.read_csv(path)
+    raise ValueError(f"Unsupported file type: {ext}")
+
+def find_col(df, candidates):
+    for c in candidates:
+        if c in df.columns: return c
+    low = {c.lower(): c for c in df.columns}
+    for c in candidates:
+        if c.lower() in low: return low[c.lower()]
+    return None
+
+def rdkit_canonical(s):
+    if s is None or (isinstance(s, float) and pd.isna(s)): return None
+    s = str(s).strip()
+    if not s: return None
+    mol = Chem.MolFromSmiles(s)  # includes sanitization pipeline
+    return Chem.MolToSmiles(mol, isomericSmiles=True) if mol else None
+
+_CAS_RE = re.compile(r"^\d{2,7}-\d{2}-\d$")
+def normalize_cas(x):
+    if pd.isna(x): return None
+    s = str(x).strip().replace(" ", "")
+    return s if _CAS_RE.match(s) else None
+
+_cas_cache, _name_cache = {}, {}
+def pubchem_by_cas(cas):
+    if not pcp or not cas: return None
+    if cas in _cas_cache: return _cas_cache[cas]
+    try:
+        cs = pcp.get_compounds(cas, 'name')
+        smi = cs[0].canonical_smiles if cs else None
+    except Exception:
+        smi = None
+    _cas_cache[cas] = smi
+    return smi
+
+def pubchem_by_name(name):
+    if not pcp or not name: return None
+    key = str(name).strip().lower()
+    if key in _name_cache: return _name_cache[key]
+    try:
+        cs = pcp.get_compounds(name, 'name')
+        smi = cs[0].canonical_smiles if cs else None
+    except Exception:
+        smi = None
+    _name_cache[key] = smi
+    return smi
+
+def choose_smiles(row, col_can, col_iso, col_cas, col_name):
+    # 1) Canonical SMILES
+    if col_can and pd.notna(row[col_can]):
+        smi = rdkit_canonical(row[col_can])
+        if smi: return smi, "Canonical"
+    # 2) Isomeric SMILES
+    if col_iso and pd.notna(row[col_iso]):
+        smi = rdkit_canonical(row[col_iso])
+        if smi: return smi, "Isomeric"
+    # 3) PubChem by CAS
+    cas = normalize_cas(row[col_cas]) if col_cas else None
+    if cas:
+        smi = pubchem_by_cas(cas)
+        smi = rdkit_canonical(smi) if smi else None
+        if smi: return smi, "PubChemCAS"
+    # 4) PubChem by Name
+    nm = str(row[col_name]).strip() if (col_name and pd.notna(row[col_name])) else None
+    if nm:
+        smi = pubchem_by_name(nm)
+        smi = rdkit_canonical(smi) if smi else None
+        if smi: return smi, "PubChemName"
+    return None, "Unresolved"
+
+# --------------- main flow ----------------
+Tk().withdraw()
+in_path = filedialog.askopenfilename(
+    title="Select merged PPDB+BPDB file",
+    filetypes=[("Excel/CSV files", "*.xlsx *.xls *.csv")]
+)
+if not in_path:
+    raise SystemExit("No file selected.")
+
+df = load_any(in_path)
+print(f"Loaded {len(df)} rows")
+
+# Columns
+col_name  = find_col(df, ["Name"])
+col_cas   = find_col(df, ["CASRN", "CAS RN", "CAS", "CAS Number", "CAS_Number"])
+col_can   = find_col(df, ["Canonical SMILES"])
+col_iso   = find_col(df, ["Isomeric SMILES"])
+if not col_name:
+    raise KeyError("Column 'Name' not found.")
+if not (col_can or col_iso or col_cas):
+    raise KeyError("Need at least one of: 'Canonical SMILES', 'Isomeric SMILES', or a CAS column.")
+
+# Build/repair Checked SMILES if missing or partially empty
+need_build = "Checked SMILES" not in df.columns or df["Checked SMILES"].isna().any()
+if need_build:
+    checked, srcs, valid = [], [], 0
+    total = len(df)
+    for i, (_, row) in enumerate(df.iterrows(), start=1):
+        smi, src = choose_smiles(row, col_can, col_iso, col_cas, col_name)
+        checked.append(smi); srcs.append(src)
+        if smi: valid += 1
+        if i % PROGRESS_EVERY == 0 or i == total:
+            print(f"Done {i}/{total} | valid: {valid} | unresolved: {i - valid}", flush=True)
+    df["Checked SMILES"] = checked
+    df["SMILES_Source"] = srcs
+else:
+    print("Found existing 'Checked SMILES'; leaving as-is.")
+
+# Save unresolved list
+base = os.path.splitext(os.path.basename(in_path))[0]
+out_dir = os.path.dirname(in_path) or "."
+unresolved = df[df.get("SMILES_Source", "Unresolved").eq("Unresolved") | df["Checked SMILES"].isna()]
+if not unresolved.empty:
+    path_unres = os.path.join(out_dir, f"{base}_unresolved_smiles.xlsx")
+    unresolved.to_excel(path_unres, index=False)
+    print(f"Saved unresolved rows -> {path_unres}")
+
+# Re-canonicalize to a uniform field for dedup
+df_valid = df[df["Checked SMILES"].notna()].copy()
+df_valid["RDKit_SMILES"] = df_valid["Checked SMILES"].apply(rdkit_canonical)
+df_valid = df_valid[df_valid["RDKit_SMILES"].notna()].copy()
+
+# Exact dedup: CAS + RDKit_SMILES + optional Label
+cas_col = find_col(df_valid, ["CASRN", "CAS RN", "CAS", "CAS Number", "CAS_Number"])
+subset_exact = [c for c in [cas_col, "RDKit_SMILES", "Label"] if c in df_valid.columns]
+df_exact = df_valid.drop_duplicates(subset=subset_exact, keep="first") if subset_exact else df_valid.copy()
+
+# Structural dedup: RDKit_SMILES only
+df_struct = df_exact.drop_duplicates(subset=["RDKit_SMILES"], keep="first")
+
+# Save outputs next to input
+path_with = os.path.join(out_dir, f"{base}_with_smiles.xlsx")
+path_exact = os.path.join(out_dir, f"{base}_correct_smiles_exact.xlsx")
+path_struct = os.path.join(out_dir, f"{base}_correct_smiles_dedup.xlsx")
+
+df.to_excel(path_with, index=False)
+df_exact.to_excel(path_exact, index=False)
+df_struct.to_excel(path_struct, index=False)
+
+print(f"Saved full (with Checked SMILES): {path_with}")
+print(f"After exact dedup:                {len(df_exact)} rows -> {path_exact}")
+print(f"After structural dedup:           {len(df_struct)} rows -> {path_struct}")
