@@ -1,0 +1,57 @@
+import pandas as pd
+import tkinter as tk
+from tkinter import filedialog
+import os
+
+
+root = tk.Tk()
+root.withdraw()
+
+print("📂 Select cleaned/merged database file")
+file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
+
+if not file_path:
+    print("No file selected.")
+    exit()
+
+
+df = pd.read_excel(file_path)
+
+
+cols_to_check = [
+    "solubility_water",
+    "solubility_organic",
+    "melting_point",
+    "boiling_point",
+    "log_kow",
+    "logp",
+    "density",
+    "vapour_pressure",
+    "henry_constant",
+    "acute_ld50",
+    "ttc"
+]
+
+# Ensure only existing columns are used
+cols_existing = [c for c in cols_to_check if c in df.columns]
+
+
+def count_nonempty(row):
+    return sum(pd.notna(row[c]) and str(row[c]).strip() != "" for c in cols_existing)
+
+df["nonempty_count"] = df.apply(count_nonempty, axis=1)
+
+
+# Filter: keep compounds with >= 2 data points
+
+df_filtered = df[df["nonempty_count"] >= 2].drop(columns=["nonempty_count"])
+
+
+base, _ = os.path.splitext(file_path)
+out_file = base + "_min2props.xlsx"
+df_filtered.to_excel(out_file, index=False, engine="openpyxl")
+
+print(f"Filtered database saved to {out_file}")
+print(f" Original size: {len(df)} rows")
+print(f"  - Removed: {len(df) - len(df_filtered)}")
+print(f"  - Kept: {len(df_filtered)} (with ≥ 2 data points)")
