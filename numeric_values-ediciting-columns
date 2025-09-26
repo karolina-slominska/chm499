@@ -1,0 +1,96 @@
+import pandas as pd
+import re
+import tkinter as tk
+from tkinter import filedialog
+import os
+
+def extract_number(val):
+    """Extract first floating or integer number from a string."""
+    if pd.isna(val):
+        return None
+    match = re.search(r"[-+]?\d*\.?\d+", str(val))
+    return float(match.group()) if match else None
+
+def extract_type(val):
+    """Extract pesticide type keywords."""
+    if pd.isna(val):
+        return None
+    val = str(val).lower()
+    types = []
+    for word in ["pesticide", "fungicide", "insecticide", "herbicide"]:
+        if word in val:
+            types.append(word.capitalize())
+    return ", ".join(types) if types else None
+
+def extract_cramer(val):
+    """Extract TTC class (Low, Moderate, High)."""
+    if pd.isna(val):
+        return None
+    val = str(val).lower()
+    if "low" in val:
+        return "low"
+    elif "moderate" in val:
+        return "moderate"
+    elif "high" in val:
+        return "high"
+    else:
+        return None
+
+
+root = tk.Tk()
+root.withdraw()
+file_path = filedialog.askopenfilename(
+    title="Select pesticide database Excel file",
+    filetypes=[("Excel files", "*.xlsx *.xls")]
+)
+
+if not file_path:
+    print(" No file selected.")
+    exit()
+
+
+df = pd.read_excel(file_path)
+
+
+columns_to_keep = {
+    "Name": "name",
+    "Canonical SMILES": "smiles",
+    "Pesticide type": "type",
+    "Substance groups": "group",
+    "Substance origin": "origin",
+    "Molecular mass": "mol_mass",
+    "Solubility - In water at 20 °C (mg l⁻¹)": "solubility_water",
+    "Solubility - In organic solvents at 20 °C (mg l⁻¹)": "solubility_organic",
+    "Melting point (°C)": "melting_point",
+    "Boiling point (°C)": "boiling_point",
+    "Octanol-water partition coefficient at pH 7, 20 °C": "log_kow",
+    "Log P": "logp",
+    "Density (g ml⁻¹)": "density",
+    "Vapour pressure at 20 °C (mPa)": "vapour_pressure",
+    "Henry's law constant at 25 °C (Pa m³ mol⁻¹)": "henry_constant",
+    "Mammals - Acute oral LD₅₀ (mg kg⁻¹)": "acute_ld50",
+    "Threshold of Toxicological Concern (Cramer Class)": "ttc"
+}
+
+
+df_out = df[list(columns_to_keep.keys())].rename(columns=columns_to_keep)
+
+df_out["type"] = df_out["type"].apply(extract_type)
+df_out["solubility_water"] = df_out["solubility_water"].apply(extract_number)
+df_out["solubility_organic"] = df_out["solubility_organic"].apply(extract_number)
+df_out["melting_point"] = df_out["melting_point"].apply(extract_number)
+df_out["boiling_point"] = df_out["boiling_point"].apply(extract_number)
+df_out["log_kow"] = df_out["log_kow"].apply(extract_number)
+df_out["logp"] = df_out["logp"].apply(extract_number)
+df_out["density"] = df_out["density"].apply(extract_number)
+df_out["vapour_pressure"] = df_out["vapour_pressure"].apply(extract_number)
+df_out["henry_constant"] = df_out["henry_constant"].apply(extract_number)
+df_out["acute_ld50"] = df_out["acute_ld50"].apply(extract_number)
+df_out["ttc"] = df_out["ttc"].apply(extract_cramer)
+
+
+base, _ = os.path.splitext(file_path)
+out_file = base + "_cleaned.xlsx"
+
+df_out.to_excel(out_file, index=False, engine="openpyxl")
+
