@@ -1,0 +1,145 @@
+import os
+import shutil
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+from tkinter import Tk, filedialog
+
+PLOTS_DIR = "plots"
+
+NUMERIC_COLUMNS = [
+    "mol_mass",
+    "solubility_water",
+    "solubility_organic",
+    "melting_point",
+    "boiling_point",
+    "log_kow",
+    "logp",
+    "density",
+    "vapour_pressure",
+    "henry_constant",
+    "acute_ld50",
+]
+
+def ensure_plots_dir():
+    if os.path.exists(PLOTS_DIR):
+        shutil.rmtree(PLOTS_DIR)
+    os.mkdir(PLOTS_DIR)
+
+def clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    for col in NUMERIC_COLUMNS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+def plot_histograms(df: pd.DataFrame):
+    for col in NUMERIC_COLUMNS:
+        if col not in df.columns:
+            continue
+        series = df[col].dropna()
+        if series.empty:
+            continue
+        try:
+            plt.figure(figsize=(6, 4))
+            # log scale if values span > 1e5
+            if series.max() / max(series.min(), 1e-9) > 1e5:
+                series = np.log10(series[series > 0])  # only positive values
+                sns.histplot(series, kde=True, bins=40)
+                plt.xlabel(f"log10({col})")
+            else:
+                sns.histplot(series, kde=True, bins=40)
+                plt.xlabel(col)
+            plt.title(f"Distribution of {col}")
+            plt.ylabel("Count")
+            plt.tight_layout()
+            plt.savefig(os.path.join(PLOTS_DIR, f"{col}_hist.pdf"))
+            plt.close()
+        except Exception as e:
+            print(f"Skipping histogram for {col}: {e}")
+
+def plot_boxplots(df: pd.DataFrame):
+    cols_present = [c for c in NUMERIC_COLUMNS if c in df.columns]
+    if not cols_present:
+        return
+    df_long = df.melt(value_vars=cols_present, var_name="Property", value_name="Value")
+    df_long = df_long.dropna()
+    if df_long.empty:
+        return
+    try:
+        plt.figure(figsize=(12, 6))
+        sns.boxplot(x="Property", y="Value", data=df_long)
+        plt.xticks(rotation=45, ha="right")
+        plt.title("Boxplots of properties")
+        plt.tight_layout()
+        plt.savefig(os.path.join(PLOTS_DIR, "boxplots.pdf"))
+        plt.close()
+    except Exception as e:
+        print(f"Skipping boxplots: {e}")
+
+def plot_correlation_heatmap(df: pd.DataFrame):
+    cols_present = [c for c in NUMERIC_COLUMNS if c in df.columns]
+    if not cols_present:
+        return
+    corr = df[cols_present].corr().dropna(how="all").dropna(axis=1, how="all")
+    if corr.empty:
+        return
+    try:
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(corr, annot=True, cmap="coolwarm", center=0)
+        plt.title("Correlation heatmap")
+        plt.tight_layout()
+        plt.savefig(os.path.join(PLOTS_DIR, "correlation_heatmap.pdf"))
+        plt.close()
+    except Exception as e:
+        print(f"Skipping correlation heatmap: {e}")
+
+def scatter_matrix(df: pd.DataFrame):
+    cols_present = [c for c in NUMERIC_COLUMNS if c in df.columns]
+    if len(cols_present) < 2:
+        return
+    try:
+        clean_df = df[cols_present].dropna()
+        if clean_df.empty:
+            return
+        # downsample for speed/stability
+        if len(clean_df) > 500:
+            clean_df = clean_df.sample(500, random_state=0)
+        sns.pairplot(clean_df, corner=True, diag_kind="kde")
+        plt.savefig(os.path.join(PLOTS_DIR, "scatter_matrix.pdf"))
+        plt.close()
+    except Exception as e:
+        print(f"Skipping scatter matrix: {e}")
+
+if __name__ == "__main__":
+    # File picker
+    root = Tk()
+    root.withdraw() 
+    file_path = filedialog.askopenfilename(
+        title="Select your dataset Excel file",
+        filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+    )
+    root.update()
+    root.destroy()
+
+    if not file_path:
+        print("No file selected. Exiting.")
+        exit()
+
+    ensure_plots_dir()
+
+    # read Excel
+    df = pd.read_excel(file_path)
+    df = clean_numeric(df)
+
+    # summary stats
+    print("Descriptive statistics:")
+    print(df[[c for c in NUMERIC_COLUMNS if c in df.columns]].describe().T)
+
+    # generate plots
+    plot_histograms(df)
+    plot_boxplots(df)
+    plot_correlation_heatmap(df)
+    scatter_matrix(df)
+
+    print(f"Plots saved in {PLOTS_DIR}")
