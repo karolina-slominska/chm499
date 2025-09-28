@@ -12,6 +12,9 @@ chm499 project at uoft
          Direct copy: name, smiles, group, origin, mol_mass
          Cleaned numbers: solubility_water, solubility_organic, melting_point, boiling_point, log_kow, logp, density, vapour_pressure, henry_constant, acute_ld50
          Extracted categories: type (only pesticide/fungicide/insecticide/herbicide), ttc (low/moderate/high)
+      current issues: - is the MW the same as for smiles?
+                      - duplicates of some values for classes of compounds?
+                      - toxicity scans don't work for intermediate toxicity - need to fix it
    -  can I get TPSA and rotatable bonds from smiles via rdkit? think about it
 
 4. do the chemical space modelling/graphs
