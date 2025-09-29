@@ -15,6 +15,7 @@ Consistent RDKit canonical SMILES
 Step 2: If missing/invalid → fetch from PubChem by CAS RN.
 Step 3: If CAS fails/missing → fetch from PubChem by Name.
 Step 4: Final Checked SMILES is always RDKit-canonical if available.
+now 2324 correct, 598 not (usually no smiles present as it's an oil/mixture) 
 ---
 
    -  output columns:
