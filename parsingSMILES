@@ -122,9 +122,6 @@ def build_checked_smiles_row(row, col_canon, col_iso, col_cas, col_name):
 
     return None, "Unresolved"
 
-# ------------------------------
-# File picker
-# ------------------------------
 Tk().withdraw()
 print("Select your merged PPDB+BPDB Excel file")
 file_path = filedialog.askopenfilename(
