@@ -11,7 +11,11 @@ chm499 project at uoft
 Proper aromaticity (kekulization)
 Chirality cleanup
 Consistent RDKit canonical SMILES
-
+--- Step 1: All SMILES (from Canonical or Isomeric) go through RDKit standardization.
+Step 2: If missing/invalid → fetch from PubChem by CAS RN.
+Step 3: If CAS fails/missing → fetch from PubChem by Name.
+Step 4: Final Checked SMILES is always RDKit-canonical if available.
+---
 
    -  output columns:
          Direct copy: name, smiles, group, origin, mol_mass
