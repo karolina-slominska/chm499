@@ -1,0 +1,118 @@
+import os
+import pandas as pd
+from tkinter import Tk, filedialog
+from rdkit import Chem
+from rdkit.Chem import rdMolDescriptors
+
+def parse_mol(smi):
+    if not smi or pd.isna(smi):
+        return None
+    try:
+        return Chem.MolFromSmiles(str(smi).strip())
+    except Exception:
+        return None
+
+def compute_descriptors(mol):
+    """Return dict of RDKit descriptors for a molecule."""
+    if mol is None:
+        return {
+            "tpsa": None,
+            "rotatable_bonds": None,
+            "h_acceptors": None,
+            "h_donors": None,
+            "ring_count": None,
+            "frac_sp3": None,
+            "heavy_atoms": None,
+            "aromatic_fraction": None,
+        }
+    try:
+        heavy = mol.GetNumHeavyAtoms()
+        arom_atoms = sum(1 for a in mol.GetAtoms() if a.GetIsAromatic())
+        return {
+            "tpsa": rdMolDescriptors.CalcTPSA(mol),
+            "rotatable_bonds": rdMolDescriptors.CalcNumRotatableBonds(mol),
+            "h_acceptors": rdMolDescriptors.CalcNumHBA(mol),
+            "h_donors": rdMolDescriptors.CalcNumHBD(mol),
+            "ring_count": rdMolDescriptors.CalcNumRings(mol),
+            "frac_sp3": rdMolDescriptors.CalcFractionCSP3(mol),
+            "heavy_atoms": heavy,
+            "aromatic_fraction": (arom_atoms / heavy) if heavy else None,
+        }
+    except Exception:
+        return {k: None for k in [
+            "tpsa","rotatable_bonds","h_acceptors","h_donors",
+            "ring_count","frac_sp3","heavy_atoms","aromatic_fraction"
+        ]}
+
+SMARTS = {
+    "carbamate": "O=C(OC)N",
+    "organophosphate": "P(=O)(O)(O)",
+    "phosphorothioate": "P(=S)(O)(O)",
+    "triazine": "n1cncnc1",
+    "amide": "C(=O)N",
+    "nitrile": "C#N",
+    "nitro": "[N+](=O)[O-]",
+    "ester": "C(=O)O",
+    "ether": "C-O-C",
+    "carboxylic_acid": "C(=O)O[H]",
+    "alcohol": "[CX4][OX2H]",
+    "phenol": "c[OX2H]",
+    "amine_primary": "[NX3;H2;!$(NC=O)]",
+    "amine_secondary": "[NX3;H1;!$(NC=O)]",
+    "amine_tertiary": "[NX3;H0;!$(NC=O)]",
+    "sulfone": "S(=O)(=O)",
+    "sulfonamide": "S(=O)(=O)N",
+    "sulfonate_ester": "S(=O)(=O)O",
+    "thiol": "[SX2H]",
+    "thioether": "C-S-C",
+    "fluoro": "[F;X1]",
+    "chloro": "[Cl;X1]",
+    "bromo": "[Br;X1]",
+    "iodo": "[I;X1]",
+}
+
+SMARTS_PATTERNS = {k: Chem.MolFromSmarts(v) for k,v in SMARTS.items()}
+
+def count_functional_groups(mol):
+    if mol is None:
+        return {k: 0 for k in SMARTS}
+    out = {}
+    for name, patt in SMARTS_PATTERNS.items():
+        try:
+            out[name] = len(mol.GetSubstructMatches(patt))
+        except Exception:
+            out[name] = 0
+    return out
+
+if __name__ == "__main__":
+    Tk().withdraw()
+    print("Select dataset Excel file with 'Canonical SMILES'")
+    file_path = filedialog.askopenfilename(
+        title="Select dataset Excel file",
+        filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+    )
+    if not file_path:
+        print("No file selected. Exiting.")
+        exit()
+
+    df = pd.read_excel(file_path)
+    print(f"Loaded {len(df)} rows")
+
+    if "Canonical SMILES" not in df.columns:
+        raise KeyError("Column 'Canonical SMILES' not found in dataset")
+
+    desc_list, fg_list = [], []
+    for smi in df["Canonical SMILES"]:
+        mol = parse_mol(smi)
+        desc_list.append(compute_descriptors(mol))
+        fg_list.append(count_functional_groups(mol))
+
+    desc_df = pd.DataFrame(desc_list)
+    fg_df = pd.DataFrame(fg_list)
+
+    df_out = pd.concat([df.reset_index(drop=True), desc_df, fg_df], axis=1)
+
+    out_path = os.path.join(os.path.dirname(file_path), "dataset_with_rdkit_descriptors.xlsx")
+    df_out.to_excel(out_path, index=False)
+
+    print(f"Saved dataset with RDKit descriptors -> {out_path}")
