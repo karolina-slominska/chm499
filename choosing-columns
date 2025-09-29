@@ -1,0 +1,70 @@
+import os
+import pandas as pd
+from tkinter import Tk, filedialog
+
+# Columns to keep
+COLUMNS_TO_KEEP = [
+    "Name",
+    "Description",
+    "Example pests controlled",
+    "Example applications",
+    "Canonical SMILES",
+    "Isomeric SMILES",
+    "Pesticide type",
+    "Substance groups",
+    "Substance origin",
+    "Mode of action",
+    "CAS RN",
+    "Molecular mass",
+    "Formulation and application details",
+    "Solubility - In water at 20 °C (mg l⁻¹)",
+    "Solubility - In organic solvents at 20 °C (mg l⁻¹)",
+    "Melting point (°C)",
+    "Boiling point (°C)",
+    "Degradation point (°C)",
+    "Flashpoint (°C)",
+    "Octanol-water partition coefficient at pH 7, 20 °C",  # Log Kow
+    "Log P",
+    "Density (g ml⁻¹)",
+    "Dissociation constant pKa) at 25 °C",
+    "Vapour pressure at 20 °C (mPa)",
+    "Henry's law constant at 25 °C (Pa m³ mol⁻¹)",
+    "Surface tension (mN m⁻¹)",
+    "Soil degradation (days) (aerobic)",
+    "DT₅₀ (lab at 20 °C)",
+    "Kd(mL g⁻¹)",
+    "Koc(mL g⁻¹)",
+    "Mammals - Acute oral LD₅₀ (mg kg⁻¹)",
+    "Temperate Freshwater Fish - Acute 96 hour LC₅₀ (mg l⁻¹)",
+    "Algae - Acute (growth rate, fresh; mg l⁻¹) (EC₅₀)",
+    "Threshold of Toxicological Concern (Cramer Class)"
+]
+
+if __name__ == "__main__":
+    Tk().withdraw()
+    print("Select your merged PPDB+BPDB Excel file")
+    file_path = filedialog.askopenfilename(
+        title="Select merged PPDB+BPDB file",x
+        filetypes=[("Excel files", "*.xlsx")]
+    )
+    if not file_path:
+        raise SystemExit("No file selected.")
+
+    df = pd.read_excel(file_path)
+    print(f"Loaded {len(df)} rows and {len(df.columns)} columns")
+
+    # Match only available columns
+    selected_cols = []
+    for col in COLUMNS_TO_KEEP:
+        if col in df.columns:
+            selected_cols.append(col)
+        else:
+            print(f" Missing column in file: {col}")
+
+    df_filtered = df[selected_cols]
+
+    out_dir = os.path.dirname(file_path) or "."
+    out_path = os.path.join(out_dir, "ppdbbpdb_selected_columns.xlsx")
+    df_filtered.to_excel(out_path, index=False)
+
+    print(f" Saved {len(df_filtered)} rows with {len(df_filtered.columns)} selected columns -> {out_path}")
