@@ -1,0 +1,118 @@
+import os
+import re
+import pandas as pd
+from tkinter import Tk, filedialog
+
+# Columns where we want numeric values
+NUMERIC_COLS = [
+    "Molecular mass",
+    "Solubility - In water at 20 °C (mg l⁻¹)",
+    "Solubility - In organic solvents at 20 °C (mg l⁻¹)",
+    "Melting point (°C)",
+    "Boiling point (°C)",
+    "Degradation point (°C)",
+    "Flashpoint (°C)",
+    "Octanol-water partition coefficient at pH 7, 20 °C",  # Log Kow
+    "Log P",
+    "Density (g ml⁻¹)",
+    "Dissociation constant pKa) at 25 °C",
+    "Vapour pressure at 20 °C (mPa)",
+    "Henry's law constant at 25 °C (Pa m³ mol⁻¹)",
+    "Surface tension (mN m⁻¹)",
+    "Soil degradation (days) (aerobic)",
+    "DT₅₀ (lab at 20 °C)",
+    "Kd(mL g⁻¹)",
+    "Koc(mL g⁻¹)",
+    "Mammals - Acute oral LD₅₀ (mg kg⁻¹)",
+    "Temperate Freshwater Fish - Acute 96 hour LC₅₀ (mg l⁻¹)",
+    "Algae - Acute (growth rate, fresh; mg l⁻¹) (EC₅₀)"
+]
+
+def extract_number(value):
+    """Extract first float-like number from a string, else None."""
+    if pd.isna(value):
+        return None
+    match = re.search(r"[-+]?\d*\.?\d+", str(value))
+    if match:
+        try:
+            return float(match.group())
+        except ValueError:
+            return None
+    return None
+
+def simplify_pesticide_type(value: str):
+    """Simplify pesticide type into pesticide, insecticide, herbicide, other."""
+    if not isinstance(value, str):
+        return "other"
+    v = value.lower()
+    if "insect" in v:
+        return "insecticide"
+    if "herb" in v:
+        return "herbicide"
+    if "pesticide" in v:
+        return "pesticide"
+    return "other"
+
+def simplify_cramer_class(value: str):
+    """Simplify Cramer Class into High, Intermediate, Low."""
+    if not isinstance(value, str):
+        return None
+    v = value.strip().lower()
+    if "i" in v and "ii" not in v and "iii" not in v:  # Class I only
+        return "High"
+    if "ii" in v and "iii" not in v:  # Class II
+        return "Intermediate"
+    if "iii" in v:  # Class III
+        return "Low"
+    return None
+
+
+if __name__ == "__main__":
+    Tk().withdraw()
+    print("Select your filtered PPDB+BPDB file (33 columns)")
+    file_path = filedialog.askopenfilename(
+        title="Select filtered PPDB+BPDB file",
+        filetypes=[("Excel files", "*.xlsx")]
+    )
+    if not file_path:
+        raise SystemExit("No file selected.")
+
+    df = pd.read_excel(file_path)
+    print(f"Loaded {len(df)} rows")
+
+    # New cleaned dataset
+    cleaned = pd.DataFrame()
+
+    # Always keep these text columns if present
+    for col in ["Name", "Canonical SMILES", "Mode of action", "Substance origin"]:
+        if col in df.columns:
+            cleaned[col] = df[col]
+
+    # Extract numeric columns
+    numeric_added = []
+    for col in NUMERIC_COLS:
+        if col in df.columns:
+            new_col = col.replace(" ", "_") + "_num"
+            cleaned[new_col] = df[col].apply(extract_number)
+            numeric_added.append(new_col)
+        else:
+            print(f" Column not found: {col}")
+
+    # Simplify pesticide type
+    if "Pesticide type" in df.columns:
+        cleaned["Pesticide_Type_Simplified"] = df["Pesticide type"].apply(simplify_pesticide_type)
+
+    # Simplify Cramer Class
+    if "Threshold of Toxicological Concern (Cramer Class)" in df.columns:
+        cleaned["Cramer_Class_Simplified"] = df["Threshold of Toxicological Concern (Cramer Class)"].apply(simplify_cramer_class)
+
+    # Drop rows with fewer than 3 numeric datapoints
+    cleaned["Numeric_Count"] = cleaned[numeric_added].notna().sum(axis=1)
+    filtered = cleaned[cleaned["Numeric_Count"] >= 3].drop(columns=["Numeric_Count"])
+
+    # Save
+    out_dir = os.path.dirname(file_path) or "."
+    out_path = os.path.join(out_dir, "ppdbbpdb_numeric_filtered.xlsx")
+    filtered.to_excel(out_path, index=False)
+
+    print(f" Saved cleaned dataset with {len(filtered)} rows (≥3 numeric values) and {len(filtered.columns)} columns -> {out_path}")
