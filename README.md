@@ -7,7 +7,12 @@ chm499 project at uoft
    - PPDB + BPDB + EcoTOX(?)
          - PPDB has 2120 compounds, BPDB 838,overlap 36 (exact Name + CAS match)
    - choose categories (Name, Description, Example pests, Example applications, Canonical SMILES, Isomeric SMILES, Type, Groups, Origin, Mode of action, CAS RN, Mol mass, Formulation/application, Solubility water, Solubility organic, Melting point, Boiling point, Degradation point, Flashpoint, Log Kow, Log P, Density, pKa, Vapour pressure, Henry constant, Surface tension, Soil degradation, DT50, Kd, Koc, Acute oral LD50, Fish LC50, Algae EC50, TTC (Cramer Class))
-   -  do SMILES standardization (found issues - only correct 1471 SMILES :( )
+   -  do SMILES standardization (found issues - only correct 1471 SMILES :( )-> fixing it wiht standarization: Correct valence
+Proper aromaticity (kekulization)
+Chirality cleanup
+Consistent RDKit canonical SMILES
+
+
    -  output columns:
          Direct copy: name, smiles, group, origin, mol_mass
          Cleaned numbers: solubility_water, solubility_organic, melting_point, boiling_point, log_kow, logp, density, vapour_pressure, henry_constant, acute_ld50
