@@ -25,7 +25,7 @@ now 2324 correct, 598 not (usually no smiles present as it's an oil/mixture)
       current issues: - is the MW the same as for smiles?
                       - duplicates of some values for classes of compounds?
                       - toxicity scans don't work for intermediate toxicity - need to fix it
-   -  can I get TPSA and rotatable bonds from smiles via rdkit? think about it
+   -  got TPSA, H bond donors, acceptors, rot bonds, functional groups using RD KIT and processed SMILES
 
 4. do the chemical space modelling/graphs
       obseravtions: based on PPDB + BPDB heatmaps: Toxicity endpoints (e.g. acute oral LD₅₀ in mammals, fish LC₅₀, algae EC₅₀) have weak correlations with physicochemical properties like LogP, solubility, molecular mass, or vapour pressure?
