@@ -28,3 +28,10 @@ now 2324 correct, 598 not (usually no smiles present as it's an oil/mixture)
    -  can I get TPSA and rotatable bonds from smiles via rdkit? think about it
 
 4. do the chemical space modelling/graphs
+      obseravtions: based on PPDB + BPDB heatmaps: Toxicity endpoints (e.g. acute oral LD₅₀ in mammals, fish LC₅₀, algae EC₅₀) have weak correlations with physicochemical properties like LogP, solubility, molecular mass, or vapour pressure?
+ only PPDB:
+   Shows clear blocks of strong correlations (e.g., LogP–Kow, molecular mass–heavy atoms, TPSA–H-bond donors/acceptors).
+   Some properties (toxicity, flashpoint, degradation point) remain weakly or inconsistently correlated.
+only BPDB:
+   Correlation strengths are generally slightly higher and cleaner, likely because the dataset is smaller but more consistently curated.
+   Toxicity endpoints, while still weakly correlated, show slightly stronger trends with LogP and Koc compared to PPDB.
