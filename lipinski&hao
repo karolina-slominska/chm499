@@ -1,0 +1,35 @@
+Output 
+
+Lipinski rule breaks:
+0 rules broken: 1555 compounds
+1 rules broken: 232 compounds
+2 rules broken: 50 compounds
+3 rules broken: 25 compounds
+4 rules broken: 3 compounds
+
+Lipinski individual rule frequencies:
+Lipinski_rules
+           1555
+logP>5      242
+MW>=500      96
+HBA>10       49
+HBD>5        32
+
+Hao rule breaks:
+0 rules broken: 1357 compounds
+1 rules broken: 299 compounds
+2 rules broken: 121 compounds
+3 rules broken: 62 compounds
+4 rules broken: 15 compounds
+5 rules broken: 9 compounds
+6 rules broken: 2 compounds
+
+Hao individual rule frequencies:
+Hao_rules
+           1357
+HBA>6       220
+MW>435      188
+HBD>2       134
+RB>9        119
+logP>6      106
+Arom>17      77
