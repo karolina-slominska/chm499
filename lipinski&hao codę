@@ -1,0 +1,94 @@
+import os
+import pandas as pd
+from tkinter import Tk, filedialog
+from rdkit import Chem
+from rdkit.Chem import rdMolDescriptors, Crippen, Lipinski
+
+def parse_mol(smi):
+    if not smi or pd.isna(smi):
+        return None
+    try:
+        return Chem.MolFromSmiles(str(smi).strip())
+    except Exception:
+        return None
+
+def compute_descriptors(mol):
+    """Return descriptors as dict (or None if invalid)."""
+    if mol is None:
+        return None
+    try:
+        desc = {
+            "MW": rdMolDescriptors.CalcExactMolWt(mol),
+            "logP": Crippen.MolLogP(mol),
+            "HBD": Lipinski.NumHDonors(mol),
+            "HBA": Lipinski.NumHAcceptors(mol),
+            "RB": Lipinski.NumRotatableBonds(mol),
+            "AromaticBonds": sum(1 for b in mol.GetBonds() if b.GetIsAromatic())
+        }
+        return desc
+    except Exception:
+        return None
+
+def evaluate_rules(row):
+    """Evaluate Lipinski and Hao rule breaks."""
+    mw, logp, hbd, hba, rb, arom = row["MW"], row["logP"], row["HBD"], row["HBA"], row["RB"], row["AromaticBonds"]
+
+    lipinski_broken = []
+    if mw >= 500: lipinski_broken.append("MW>=500")
+    if logp > 5: lipinski_broken.append("logP>5")
+    if hbd > 5: lipinski_broken.append("HBD>5")
+    if hba > 10: lipinski_broken.append("HBA>10")
+
+    hao_broken = []
+    if mw > 435: hao_broken.append("MW>435")
+    if logp > 6: hao_broken.append("logP>6")
+    if hbd > 2: hao_broken.append("HBD>2")
+    if hba > 6: hao_broken.append("HBA>6")
+    if rb > 9: hao_broken.append("RB>9")
+    if arom > 17: hao_broken.append("Arom>17")
+
+    return pd.Series({
+        "Lipinski_broken": len(lipinski_broken),
+        "Hao_broken": len(hao_broken),
+        "Lipinski_rules": ", ".join(lipinski_broken),
+        "Hao_rules": ", ".join(hao_broken)
+    })
+
+if __name__ == "__main__":
+    Tk().withdraw()
+    print("Select dataset Excel file with 'Canonical SMILES'")
+    file_path = filedialog.askopenfilename(
+        title="Select dataset Excel file",
+        filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+    )
+    if not file_path:
+        print("No file selected.")
+        exit()
+
+    df = pd.read_excel(file_path)
+    if "Canonical SMILES" not in df.columns:
+        raise ValueError("No 'Canonical SMILES' column found!")
+
+    descs = df["Canonical SMILES"].apply(lambda s: compute_descriptors(parse_mol(s)))
+    desc_df = pd.DataFrame(descs.tolist())
+    df = pd.concat([df, desc_df], axis=1)
+
+    rules_df = df.apply(evaluate_rules, axis=1)
+    df = pd.concat([df, rules_df], axis=1)
+
+    print("\n--- Summary ---")
+    for rule_set in ["Lipinski", "Hao"]:
+        counts = df[f"{rule_set}_broken"].value_counts().sort_index()
+        print(f"\n{rule_set} rule breaks:")
+        for n, count in counts.items():
+            print(f"{n} rules broken: {count} compounds")
+
+
+        all_rules = df[f"{rule_set}_rules"].dropna().str.split(", ").explode()
+        rule_counts = all_rules.value_counts()
+        print(f"\n{rule_set} individual rule frequencies:")
+        print(rule_counts.to_string())
+
+    out_path = os.path.splitext(file_path)[0] + "_Lipinski_Hao_checked.xlsx"
+    df.to_excel(out_path, index=False)
+    print(f"\nSaved annotated file to:\n{out_path}")
